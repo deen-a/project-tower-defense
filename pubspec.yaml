@@ -1,8 +1,6 @@
 name: tower_defense
-description: A Tower Defense game built with Flutter
-
+description: A Tower Defense game
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
@@ -11,7 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  vector_math: ^2.1.4
 
 dev_dependencies:
   flutter_test:
