@@ -22,43 +22,18 @@ class GameBoard extends StatefulWidget {
   State<GameBoard> createState() => _GameBoardState();
 }
 
-class _GameBoardState extends State<GameBoard> with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 16),
-    )..repeat();
-  }
-  
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-  
+class _GameBoardState extends State<GameBoard> {
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _animationController,
-      builder: (context, child) {
-        // Update game state
-        widget.gameState.updateDetailedChunks();
-        
-        return CustomPaint(
-          size: ui.Size(
-            GameConstants.metersToPixels(GameConstants.boardWidthMeters.toDouble()),
-            GameConstants.metersToPixels(GameConstants.boardHeightMeters.toDouble()),
-          ),
-          painter: _GameBoardPainter(
-            gameState: widget.gameState,
-            pathPoints: widget.pathPoints,
-          ),
-        );
-      },
+    return CustomPaint(
+      size: ui.Size(
+        GameConstants.metersToPixels(GameConstants.boardWidthMeters.toDouble()),
+        GameConstants.metersToPixels(GameConstants.boardHeightMeters.toDouble()),
+      ),
+      painter: _GameBoardPainter(
+        gameState: widget.gameState,
+        pathPoints: widget.pathPoints,
+      ),
     );
   }
 }
@@ -85,6 +60,9 @@ class _GameBoardPainter extends CustomPainter {
     
     // Draw path
     RenderingSystem.drawPath(canvas, pathPoints);
+    
+    // Draw base/finish line
+    _drawBase(canvas);
     
     // Draw towers
     for (var tower in gameState.towers) {
@@ -116,6 +94,68 @@ class _GameBoardPainter extends CustomPainter {
       final isDetailed = gameState.shouldRenderDetailedChunk('${chunk.x},${chunk.y}');
       RenderingSystem.drawChunkBackground(canvas, bounds, isDetailed);
     }
+  }
+  
+  void _drawBase(Canvas canvas) {
+    // Draw base at the end of path
+    final endPoint = GameConstants.gridToPixel(pathPoints.last.$1, pathPoints.last.$2);
+    
+    // Base background
+    final baseRect = ui.Rect.fromCircle(
+      center: endPoint,
+      radius: 20,
+    );
+    
+    canvas.drawRect(
+      baseRect,
+      Paint()..color = Colors.blue.withOpacity(0.3),
+    );
+    
+    // Base health bar
+    final healthPercent = gameState.baseHealth / gameState.maxBaseHealth;
+    final healthBarWidth = 60;
+    final healthBarHeight = 8;
+    final healthBarY = endPoint.dy - 30;
+    
+    // Background
+    canvas.drawRect(
+      ui.Rect.fromCenter(
+        center: ui.Offset(endPoint.dx, healthBarY),
+        width: healthBarWidth.toDouble(),
+        height: healthBarHeight.toDouble(),
+      ),
+      Paint()..color = Colors.red[800]!,
+    );
+    
+    // Current health
+    canvas.drawRect(
+      ui.Rect.fromCenter(
+        center: ui.Offset(endPoint.dx - healthBarWidth * (1 - healthPercent) / 2, healthBarY),
+        width: healthBarWidth * healthPercent,
+        height: healthBarHeight.toDouble(),
+      ),
+      Paint()..color = Colors.green,
+    );
+    
+    // Base text
+    final textSpan = TextSpan(
+      text: 'BASE',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    
+    textPainter.paint(
+      canvas,
+      ui.Offset(endPoint.dx - textPainter.width / 2, endPoint.dy + 15),
+    );
   }
   
   void _drawPlacementPreview(Canvas canvas) {
@@ -164,9 +204,14 @@ class _GameBoardPainter extends CustomPainter {
   
   @override
   bool shouldRepaint(covariant _GameBoardPainter oldDelegate) {
-    return gameState.towers != oldDelegate.gameState.towers ||
-           gameState.enemies != oldDelegate.gameState.enemies ||
-           gameState.projectiles != oldDelegate.gameState.projectiles ||
-           gameState.currentPlacement != oldDelegate.gameState.currentPlacement;
+    // Selalu repaint karena game berjalan terus
+    return true;
+    
+    // Atau bisa lebih spesifik:
+    // return gameState.towers != oldDelegate.gameState.towers ||
+    //        gameState.enemies != oldDelegate.gameState.enemies ||
+    //        gameState.projectiles != oldDelegate.gameState.projectiles ||
+    //        gameState.currentPlacement != oldDelegate.gameState.currentPlacement ||
+    //        gameState.baseHealth != oldDelegate.gameState.baseHealth;
   }
 }

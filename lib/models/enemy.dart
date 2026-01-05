@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import '../core/game_constants.dart';
-import '../utils/offset_extension.dart'; // Import extension
+import '../utils/offset_extension.dart';
 
 class Enemy {
   final String type;
@@ -13,6 +13,7 @@ class Enemy {
   double progress; // 0-1 progress along path
   ui.Offset currentPosition;
   final List<ui.Offset> pathPoints;
+  bool reachedEnd = false;
   
   Enemy({
     required this.type,
@@ -26,7 +27,57 @@ class Enemy {
     progress = 0,
     currentPosition = pathPoints.first;
   
+  factory Enemy.basic(List<ui.Offset> pathPoints) {
+    return Enemy(
+      type: 'basic',
+      health: 100,
+      maxHealth: 100,
+      walkSpeed: 2.0,
+      isFlying: false,
+      abilities: [],
+      pathPoints: pathPoints,
+    );
+  }
+  
+  factory Enemy.fast(List<ui.Offset> pathPoints) {
+    return Enemy(
+      type: 'fast',
+      health: 50,
+      maxHealth: 50,
+      walkSpeed: 4.0,
+      isFlying: false,
+      abilities: [],
+      pathPoints: pathPoints,
+    );
+  }
+  
+  factory Enemy.tank(List<ui.Offset> pathPoints) {
+    return Enemy(
+      type: 'tank',
+      health: 300,
+      maxHealth: 300,
+      walkSpeed: 1.0,
+      isFlying: false,
+      abilities: [],
+      pathPoints: pathPoints,
+    );
+  }
+  
+  factory Enemy.flying(List<ui.Offset> pathPoints) {
+    return Enemy(
+      type: 'flying',
+      health: 80,
+      maxHealth: 80,
+      walkSpeed: 3.0,
+      isFlying: true,
+      abilities: [],
+      pathPoints: pathPoints,
+    );
+  }
+  
   void update(double dt) {
+    if (reachedEnd) return;
+    
     // Move along path
     final speed = walkSpeed * GameConstants.pixelsPerMeter * dt;
     
@@ -36,17 +87,23 @@ class Enemy {
         final start = pathPoints[i];
         final end = pathPoints[i + 1];
         final segmentLength = (end - start).distance;
-        final maxProgress = segmentLength / _totalPathLength();
+        final totalLength = _totalPathLength();
+        final maxProgress = segmentLength / totalLength;
         
         if (progress < (i + 1) * maxProgress) {
           // Calculate position in this segment
           final segmentProgress = (progress - i * maxProgress) / maxProgress;
-          final targetPos = ui.Offset.lerp(start, end, segmentProgress)!;
           final moveDirection = (end - start).normalized;
-          final newPos = currentPosition + moveDirection * speed;
           
-          currentPosition = newPos;
-          progress += speed / _totalPathLength();
+          // Update position
+          currentPosition += moveDirection * speed;
+          progress += speed / totalLength;
+          
+          // Check if reached end
+          if (progress >= 1.0) {
+            reachedEnd = true;
+            currentPosition = pathPoints.last;
+          }
           break;
         }
       }
@@ -67,14 +124,11 @@ class Enemy {
     health -= damage;
     if (health < 0) health = 0;
   }
-}
-
-enum EnemyType {
-  basic,
-  tank,
-  fast,
-  flying,
-  boss,
+  
+  double get remainingHealthDamage {
+    // Damage ke base = sisa health / 5
+    return health / 5;
+  }
 }
 
 class EnemyAbility {

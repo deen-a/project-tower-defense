@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import 'core/game_constants.dart';
 import 'core/game_state.dart';
 import 'components/game_board.dart';
 import 'models/tower.dart';
+import 'models/enemy.dart';
 import 'systems/placement_system.dart';
-import 'utils/offset_extension.dart';
+import 'systems/wave_system.dart';
+import 'systems/game_loop.dart'; // IMPORT BARU
 
 void main() {
   runApp(const TowerDefenseGame());
@@ -35,7 +38,7 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateMixin {
   late GameState gameState;
-  late AnimationController _animationController;
+  late GameLoop gameLoop; // TAMBAH INI
   
   // Path definition
   final List<(int, int)> pathPoints = [
@@ -49,56 +52,24 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     (150, 30),
   ];
   
+  // Untuk hover detection
+  GlobalKey _boardKey = GlobalKey();
+  (int, int)? _hoverGridPosition;
+  
   @override
   void initState() {
     super.initState();
     
     gameState = GameState();
+    gameLoop = GameLoop(gameState); // INIT GAME LOOP
+    gameLoop.start(); // START GAME LOOP
     
-    // Initialize animation loop
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 16), // ~60 FPS
-    )..addListener(_updateGame);
-    
-    _startGameLoop();
-  }
-  
-  void _startGameLoop() {
-    _animationController.repeat();
-  }
-  
-  void _updateGame() {
-    final dt = 1 / 60; // Fixed timestep
-    
-    // Update enemies
-    gameState.enemies.removeWhere((enemy) => !enemy.isAlive);
-    
-    for (var enemy in gameState.enemies) {
-      enemy.update(dt);
-    }
-    
-    // Update projectiles
-    gameState.projectiles.removeWhere((proj) => !proj.isActive);
-    
-    for (var projectile in gameState.projectiles) {
-      projectile.update(dt);
-    }
-    
-    // Update towers
-    for (var tower in gameState.towers) {
-      tower.update(dt);
-    }
-    
-    // Trigger repaint
-    if (mounted) {
-      setState(() {});
-    }
+    // Hapus AnimationController lama, ganti dengan GameLoop
   }
   
   @override
   void dispose() {
-    _animationController.dispose();
+    gameLoop.dispose(); // DISPOSE GAME LOOP
     super.dispose();
   }
   
@@ -113,26 +84,38 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
   
   Widget _buildGameUI() {
-    return Column(
-      children: [
-        // HUD
-        _buildHUD(),
-        
-        // Game Board
-        Expanded(
-          child: Center(
-            child: GameBoard(
-              gameState: gameState,
-              pathPoints: pathPoints,
-              onGridHover: _handleGridHover,
-              onGridTap: _handleGridTap,
+    return StreamBuilder<int>(
+      stream: Stream.periodic(const Duration(milliseconds: 16), (_) => gameLoop.frameCount),
+      builder: (context, snapshot) {
+        return Column(
+          children: [
+            // HUD
+            _buildHUD(),
+            
+            // Game Board dengan MouseRegion
+            Expanded(
+              child: Center(
+                child: MouseRegion(
+                  onHover: _handleMouseHover,
+                  child: GestureDetector(
+                    onTapDown: _handleBoardTap,
+                    child: GameBoard(
+                      key: _boardKey,
+                      gameState: gameState,
+                      pathPoints: pathPoints,
+                      onGridHover: _handleGridHover,
+                      onGridTap: _handleGridTap,
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
-        
-        // Tower Shop
-        _buildTowerShop(),
-      ],
+            
+            // Tower Shop
+            _buildTowerShop(),
+          ],
+        );
+      }
     );
   }
   
@@ -155,8 +138,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
               ),
               Text(
-                'Wave: ${gameState.waveNumber}',
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                'Base HP: ${gameState.baseHealth.toStringAsFixed(1)}/${gameState.maxBaseHealth}',
+                style: TextStyle(
+                  color: gameState.baseHealth < 30 ? Colors.red : Colors.green,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -174,19 +160,19 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
               ),
               Text(
-                'Enemies: ${gameState.enemies.length}',
+                'Wave: ${gameState.waveNumber} | Enemies: ${gameState.enemies.length}',
                 style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
             ],
           ),
           
           ElevatedButton(
-            onPressed: _startWave,
+            onPressed: gameState.isWaveActive ? null : _startWave,
             style: ElevatedButton.styleFrom(
-              backgroundColor: gameState.isWaveActive ? Colors.red : Colors.green,
+              backgroundColor: gameState.isWaveActive ? Colors.grey : Colors.green,
               foregroundColor: Colors.white,
             ),
-            child: Text(gameState.isWaveActive ? 'Wave Active' : 'Start Wave'),
+            child: Text(gameState.isWaveActive ? 'Wave Active' : 'Start Wave ${gameState.waveNumber + 1}'),
           ),
         ],
       ),
@@ -236,6 +222,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ? () {
               setState(() {
                 gameState.currentPlacement = TowerPlacement(type: type);
+                _hoverGridPosition = null;
               });
             }
           : null,
@@ -281,6 +268,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       onTap: () {
         setState(() {
           gameState.currentPlacement = null;
+          _hoverGridPosition = null;
         });
       },
       child: Container(
@@ -313,18 +301,59 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
   
+  void _handleMouseHover(PointerEvent event) {
+    if (gameState.currentPlacement == null) return;
+    
+    final renderBox = _boardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    
+    final localPos = renderBox.globalToLocal(event.position);
+    final size = renderBox.size;
+    
+    // Check if within bounds
+    if (localPos.dx < 0 || localPos.dy < 0 || 
+        localPos.dx > size.width || localPos.dy > size.height) {
+      setState(() {
+        _hoverGridPosition = null;
+      });
+      return;
+    }
+    
+    // Convert to grid coordinates
+    final unscaledX = localPos.dx; // Sudah dalam pixel game
+    final unscaledY = localPos.dy;
+    
+    final gridX = (unscaledX / GameConstants.pixelsPerMeter).floor();
+    final gridY = (unscaledY / GameConstants.pixelsPerMeter).floor();
+    
+    // Clamp to board boundaries
+    final clampedX = gridX.clamp(0, GameConstants.boardWidthMeters - 1);
+    final clampedY = gridY.clamp(0, GameConstants.boardHeightMeters - 1);
+    
+    setState(() {
+      _hoverGridPosition = (clampedX, clampedY);
+      _handleGridHover(_hoverGridPosition);
+    });
+  }
+  
+  void _handleBoardTap(TapDownDetails details) {
+    if (_hoverGridPosition != null) {
+      _handleGridTap(_hoverGridPosition);
+    }
+  }
+  
   void _handleGridHover((int, int)? gridPos) {
     if (gridPos == null || gameState.currentPlacement == null) return;
     
+    final pixelPos = GameConstants.gridToPixel(gridPos.$1, gridPos.$2);
+    final isValid = PlacementSystem.isValidPosition(
+      pixelPos,
+      gameState.currentPlacement!.type,
+      gameState.towers,
+      pathPoints,
+    );
+    
     setState(() {
-      final pixelPos = GameConstants.gridToPixel(gridPos.$1, gridPos.$2);
-      final isValid = PlacementSystem.isValidPosition(
-        pixelPos,
-        gameState.currentPlacement!.type,
-        gameState.towers,
-        pathPoints,
-      );
-      
       gameState.currentPlacement = TowerPlacement(
         type: gameState.currentPlacement!.type,
         gridPosition: gridPos,
@@ -348,6 +377,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         ));
         gameState.coins -= specs.cost;
         gameState.currentPlacement = null;
+        _hoverGridPosition = null;
       });
     }
   }
@@ -359,18 +389,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       gameState.isWaveActive = true;
       gameState.waveNumber++;
       
-      // Spawn enemies based on wave number
-      // This is a simple implementation
-      for (int i = 0; i < gameState.waveNumber * 5; i++) {
-        // Convert path points from grid to pixel
-        final pixelPathPoints = pathPoints.map((point) {
-          return GameConstants.gridToPixel(point.$1, point.$2);
-        }).toList();
-        
-        // Create enemy
-        // You'll need to add more sophisticated enemy creation here
-        // gameState.enemies.add(Enemy(...));
-      }
+      // Convert path points from grid to pixel
+      final pixelPathPoints = pathPoints.map((point) {
+        return GameConstants.gridToPixel(point.$1, point.$2);
+      }).toList();
+      
+      // Generate enemies for this wave
+      final newEnemies = WaveSystem.generateWave(gameState.waveNumber, pixelPathPoints);
+      gameState.enemies.addAll(newEnemies);
     });
   }
 }
