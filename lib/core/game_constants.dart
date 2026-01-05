@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 
 class GameConstants {
@@ -9,9 +10,17 @@ class GameConstants {
   static const int boardWidthMeters = 150;  // 150m = 750px
   static const int boardHeightMeters = 100; // 100m = 500px
   
+  // Path settings
+  static const double pathWidthMeters = 8.0;
+  static const double pathMarginMeters = 3.0; // 3 meter margin dari path
+  
   // Convert meters to pixels
   static double metersToPixels(double meters) => meters * pixelsPerMeter;
   static double pixelsToMeters(double pixels) => pixels * meterPerPixel;
+  
+  // Getter untuk path pixels (tidak bisa const)
+  static double get pathWidthPixels => metersToPixels(pathWidthMeters);
+  static double get pathMarginPixels => metersToPixels(pathMarginMeters);
   
   // Convert grid position (in meters) to pixel position
   static Offset gridToPixel(int gridX, int gridY) {
@@ -37,7 +46,7 @@ class GameConstants {
       damage: 15,
       fireRate: 1.0,
       range: 15.0,
-      placementMargin: 2.0,
+      placementMargin: 3.0,
       color: Colors.blue,
       icon: Icons.tour,
     ),
@@ -47,7 +56,7 @@ class GameConstants {
       damage: 8,
       fireRate: 3.33,
       range: 15.0,
-      placementMargin: 2.0,
+      placementMargin: 3.0,
       color: Colors.red,
       icon: Icons.burst_mode,
     ),
@@ -57,7 +66,7 @@ class GameConstants {
       damage: 40,
       fireRate: 0.4,
       range: 32.0,
-      placementMargin: 4.0,
+      placementMargin: 6.0,
       color: Colors.purple,
       icon: Icons.track_changes,
     ),
@@ -68,7 +77,7 @@ class GameConstants {
       fireRate: 10.0,
       range: 12.0,
       secondaryRange: 18.0,
-      placementMargin: 3.0,
+      placementMargin: 2.0,
       color: Colors.orange,
       icon: Icons.local_fire_department,
     ),
