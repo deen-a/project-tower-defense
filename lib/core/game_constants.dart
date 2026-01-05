@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 
 class GameConstants {
   // Grid System: 5px = 1 meter
@@ -23,15 +24,15 @@ class GameConstants {
   static double get pathMarginPixels => metersToPixels(pathMarginMeters);
   
   // Convert grid position (in meters) to pixel position
-  static Offset gridToPixel(int gridX, int gridY) {
-    return Offset(
+  static ui.Offset gridToPixel(int gridX, int gridY) {
+    return ui.Offset(
       gridX * pixelsPerMeter + pixelsPerMeter / 2,
       gridY * pixelsPerMeter + pixelsPerMeter / 2,
     );
   }
   
   // Convert pixel position to grid position (in meters)
-  static (int, int) pixelToGrid(Offset pixelPosition) {
+  static (int, int) pixelToGrid(ui.Offset pixelPosition) {
     return (
       (pixelPosition.dx / pixelsPerMeter).floor(),
       (pixelPosition.dy / pixelsPerMeter).floor(),
@@ -46,24 +47,24 @@ class GameConstants {
       damage: 15,
       fireRate: 1.0,
       range: 15.0,
-      placementMargin: 3.0,
+      placementMargin: 2.0,
       color: Colors.blue,
       icon: Icons.tour,
     ),
     'burst': TowerSpecs(
       name: 'Rapid Tower',
       cost: 125,
-      damage: 8,
+      damage: 10,
       fireRate: 3.33,
       range: 15.0,
-      placementMargin: 3.0,
+      placementMargin: 2.0,
       color: Colors.red,
       icon: Icons.burst_mode,
     ),
     'railgun': TowerSpecs(
       name: 'Sniper Tower',
       cost: 225,
-      damage: 40,
+      damage: 35,
       fireRate: 0.4,
       range: 32.0,
       placementMargin: 6.0,
@@ -73,11 +74,11 @@ class GameConstants {
     'flamethrower': TowerSpecs(
       name: 'Flamethrower',
       cost: 150,
-      damage: 5,
+      damage: 4,
       fireRate: 10.0,
       range: 12.0,
       secondaryRange: 18.0,
-      placementMargin: 2.0,
+      placementMargin: 1.0,
       color: Colors.orange,
       icon: Icons.local_fire_department,
     ),

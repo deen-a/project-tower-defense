@@ -1,246 +1,90 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
-import '../core/game_state.dart';
-import '../utils/map_generator.dart';
-import '../offset_extension.dart';
-import 'tower.dart';
+import 'dart:ui' as ui;
+import '../core/game_constants.dart';
+import '../utils/offset_extension.dart'; // Import extension
 
-abstract class Enemy {
+class Enemy {
   final String type;
-  final int health;
-  final double speed;
-  final int coinReward;
+  double health;
+  final double maxHealth;
+  final double walkSpeed; // meters per second
   final bool isFlying;
   final List<EnemyAbility> abilities;
-  
-  int currentHealth;
-  Offset position;
-  double distanceTraveled = 0;
-  bool isAlive = true;
+  double progress; // 0-1 progress along path
+  ui.Offset currentPosition;
+  final List<ui.Offset> pathPoints;
   
   Enemy({
     required this.type,
     required this.health,
-    required this.speed,
-    required this.coinReward,
+    required this.maxHealth,
+    required this.walkSpeed,
     required this.isFlying,
     required this.abilities,
-    required this.position,
-  }) : currentHealth = health;
-  
-  void update(double dt, MapData mapData) {
-    if (isFlying) {
-      _updateFlyingMovement(dt, mapData);
-    } else {
-      _updateGroundMovement(dt, mapData);
-    }
-    
-    // Update abilities
-    for (var ability in abilities) {
-      ability.update(dt);
-    }
-  }
-  
-  void _updateFlyingMovement(double dt, MapData mapData) {
-    // Flying enemies take shortest path avoiding flying obstacles
-    final target = mapData.path.last;
-    final direction = (target - position).normalized();
-    final newPosition = position + direction * speed * dt;
-    
-    // Check for flying obstacles
-    bool willCollide = false;
-    for (var obstacle in mapData.flyingObstacles) {
-      if ((newPosition - obstacle).distance < 1.0) {
-        willCollide = true;
-        break;
-      }
-    }
-    
-    if (!willCollide) {
-      position = newPosition;
-    } else {
-      // Simple obstacle avoidance - move around
-      position = position + Offset(direction.dy, -direction.dx) * speed * dt;
-    }
-    
-    distanceTraveled += speed * dt;
-  }
-  
-  void _updateGroundMovement(double dt, MapData mapData) {
-    // Ground enemies follow the path
-    // Implementation for path following...
-  }
-  
-  void takeDamage(int damage) {
-    currentHealth -= damage;
-    if (currentHealth <= 0) {
-      isAlive = false;
-    }
-  }
-  
-  void useAbilities(List<Tower> nearbyTowers) {
-    for (var ability in abilities) {
-      if (ability.canActivate()) {
-        ability.activate(nearbyTowers, this);
-      }
-    }
-  }
-}
-
-// Enemy Abilities System
-abstract class EnemyAbility {
-  final double cooldown;
-  final double range;
-  double currentCooldown = 0;
-  
-  EnemyAbility({required this.cooldown, required this.range});
-  
-  bool canActivate() => currentCooldown <= 0;
+    required this.pathPoints,
+  }) : 
+    progress = 0,
+    currentPosition = pathPoints.first;
   
   void update(double dt) {
-    if (currentCooldown > 0) {
-      currentCooldown -= dt;
-    }
-  }
-  
-  void activate(List<Tower> nearbyTowers, Enemy owner);
-  
-  List<Tower> getTowersInRange(Offset position, List<Tower> allTowers) {
-    return allTowers.where((tower) => 
-      (tower.position - position).distance <= range
-    ).toList();
-  }
-}
-
-// Specific Abilities
-class StunAbility extends EnemyAbility {
-  final double stunDuration;
-  
-  StunAbility({required super.cooldown, required super.range, required this.stunDuration});
-  
-  @override
-  void activate(List<Tower> nearbyTowers, Enemy owner) {
-    final towersInRange = getTowersInRange(owner.position, nearbyTowers);
+    // Move along path
+    final speed = walkSpeed * GameConstants.pixelsPerMeter * dt;
     
-    for (var tower in towersInRange) {
-      if (tower.stunable) {
-        tower.applyStun(stunDuration);
+    if (progress < 1.0) {
+      // Find current segment
+      for (int i = 0; i < pathPoints.length - 1; i++) {
+        final start = pathPoints[i];
+        final end = pathPoints[i + 1];
+        final segmentLength = (end - start).distance;
+        final maxProgress = segmentLength / _totalPathLength();
+        
+        if (progress < (i + 1) * maxProgress) {
+          // Calculate position in this segment
+          final segmentProgress = (progress - i * maxProgress) / maxProgress;
+          final targetPos = ui.Offset.lerp(start, end, segmentProgress)!;
+          final moveDirection = (end - start).normalized;
+          final newPos = currentPosition + moveDirection * speed;
+          
+          currentPosition = newPos;
+          progress += speed / _totalPathLength();
+          break;
+        }
       }
     }
-    
-    currentCooldown = cooldown;
   }
-}
-
-class LifestealAbility extends EnemyAbility {
-  final double lifestealPercent;
   
-  LifestealAbility({required super.cooldown, required super.range, required this.lifestealPercent});
-  
-  @override
-  void activate(List<Tower> nearbyTowers, Enemy owner) {
-    final towersInRange = getTowersInRange(owner.position, nearbyTowers);
-    
-    for (var tower in towersInRange) {
-      if (tower.currentHealth > 10) {
-        final drainAmount = tower.currentHealth * lifestealPercent;
-        tower.takeDamage(drainAmount.toInt());
-        owner.currentHealth = min(owner.health, owner.currentHealth + drainAmount.toInt());
-      }
+  double _totalPathLength() {
+    double length = 0;
+    for (int i = 0; i < pathPoints.length - 1; i++) {
+      length += (pathPoints[i + 1] - pathPoints[i]).distance;
     }
-    
-    currentCooldown = cooldown;
+    return length;
+  }
+  
+  bool get isAlive => health > 0;
+  
+  void takeDamage(double damage) {
+    health -= damage;
+    if (health < 0) health = 0;
   }
 }
 
-// Concrete Enemy Classes
-class BasicEnemy extends Enemy {
-  BasicEnemy(Offset position) : super(
-    type: "basic",
-    health: 100,
-    speed: 1.0,
-    coinReward: 10,
-    isFlying: false,
-    abilities: [],
-    position: position,
-  );
+enum EnemyType {
+  basic,
+  tank,
+  fast,
+  flying,
+  boss,
 }
 
-class SpeedyEnemy extends Enemy {
-  SpeedyEnemy(Offset position) : super(
-    type: "speedy", 
-    health: 50,
-    speed: 2.0,
-    coinReward: 15,
-    isFlying: false,
-    abilities: [],
-    position: position,
-  );
-}
-
-class TankEnemy extends Enemy {
-  TankEnemy(Offset position) : super(
-    type: "tank",
-    health: 300,
-    speed: 0.6,
-    coinReward: 25,
-    isFlying: false,
-    abilities: [],
-    position: position,
-  );
-}
-
-class FlyingEnemy extends Enemy {
-  FlyingEnemy(Offset position) : super(
-    type: "flying",
-    health: 80,
-    speed: 1.5,
-    coinReward: 20,
-    isFlying: true,
-    abilities: [],
-    position: position,
-  );
-}
-
-class EliteStunEnemy extends Enemy {
-  EliteStunEnemy(Offset position) : super(
-    type: "elite_stun",
-    health: 150,
-    speed: 1.2,
-    coinReward: 40,
-    isFlying: false,
-    abilities: [
-      StunAbility(cooldown: 15.0, range: 3.0, stunDuration: 3.0),
-    ],
-    position: position,
-  );
-}
-
-class LifestealEnemy extends Enemy {
-  LifestealEnemy(Offset position) : super(
-    type: "lifesteal",
-    health: 120,
-    speed: 1.0,
-    coinReward: 35,
-    isFlying: false,
-    abilities: [
-      LifestealAbility(cooldown: 10.0, range: 2.5, lifestealPercent: 0.1),
-    ],
-    position: position,
-  );
-}
-
-class BossEnemy extends Enemy {
-  BossEnemy(Offset position) : super(
-    type: "boss",
-    health: 1000,
-    speed: 0.4,
-    coinReward: 100,
-    isFlying: false,
-    abilities: [
-      StunAbility(cooldown: 20.0, range: 4.0, stunDuration: 5.0),
-      LifestealAbility(cooldown: 12.0, range: 3.0, lifestealPercent: 0.15),
-    ],
-    position: position,
-  );
+class EnemyAbility {
+  final String name;
+  final String description;
+  final Function(Enemy) effect;
+  
+  EnemyAbility({
+    required this.name,
+    required this.description,
+    required this.effect,
+  });
 }

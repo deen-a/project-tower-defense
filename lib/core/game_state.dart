@@ -1,68 +1,52 @@
 import 'package:flutter/material.dart';
-
-class GameConstants {
-  static const int debugCoins = 2000000;
-  static const int playerStartHealth = 100;
-  
-  // Tower types
-  static const String towerBasic = "basic";
-  static const String towerBurst = "burst"; 
-  static const String towerRailgun = "railgun";
-  static const String towerFlamethrower = "flamethrower";
-}
+import '../models/tower.dart';
+import '../models/enemy.dart';
+import '../models/projectile.dart';
+import 'chunk_manager.dart';
 
 class GameState {
-  int coins = GameConstants.debugCoins;
-  int playerHealth = GameConstants.playerStartHealth;
-  int currentWave = 0;
+  List<Tower> towers = [];
+  List<Enemy> enemies = [];
+  List<Projectile> projectiles = [];
+  TowerPlacement? currentPlacement;
+  int coins = 2000000;
+  int waveNumber = 0;
   bool isWaveActive = false;
-  bool isGameOver = false;
-  int skillPoints = 0;
   
-  // Observable for state changes
-  final ValueNotifier<void> notifier = ValueNotifier(null);
+  // Chunk optimization
+  final ChunkManager chunkManager = ChunkManager();
+  Set<String> detailedChunks = {};
   
-  void notifyListeners() => notifier.value = null;
-  
-  bool spendCoins(int amount) {
-    if (coins >= amount) {
-      coins -= amount;
-      notifyListeners();
-      return true;
+  void updateDetailedChunks() {
+    detailedChunks.clear();
+    
+    // Add chunks with towers
+    for (var tower in towers) {
+      final (chunkX, chunkY) = ChunkManager.worldToChunk(tower.pixelPosition);
+      detailedChunks.add('$chunkX,$chunkY');
     }
-    return false;
-  }
-  
-  void addCoins(int amount) {
-    coins += amount;
-    notifyListeners();
-  }
-  
-  void takeDamage(int damage) {
-    playerHealth -= damage;
-    if (playerHealth <= 0) {
-      playerHealth = 0;
-      isGameOver = true;
+    
+    // Add chunks with enemies
+    for (var enemy in enemies) {
+      final (chunkX, chunkY) = ChunkManager.worldToChunk(enemy.currentPosition);
+      detailedChunks.add('$chunkX,$chunkY');
     }
-    notifyListeners();
-  }
-  
-  bool spendSkillPoints(int amount) {
-    if (skillPoints >= amount) {
-      skillPoints -= amount;
-      notifyListeners();
-      return true;
+    
+    // Add chunks with placement preview
+    if (currentPlacement?.gridPosition != null) {
+      final pos = currentPlacement!.pixelPosition!;
+      final (chunkX, chunkY) = ChunkManager.worldToChunk(pos);
+      
+      // Add 3x3 area around placement
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          detailedChunks.add('${chunkX + dx},${chunkY + dy}');
+        }
+      }
     }
-    return false;
   }
   
-  void addSkillPoints(int amount) {
-    skillPoints += amount;
-    notifyListeners();
-  }
-  
-  void onBossDefeated() {
-    addSkillPoints(1);
-    addCoins(200);
+  bool shouldRenderDetailedChunk(String chunkKey) {
+    return detailedChunks.contains(chunkKey);
   }
 }
