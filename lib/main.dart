@@ -7,7 +7,7 @@ import 'models/tower.dart';
 import 'models/enemy.dart';
 import 'systems/placement_system.dart';
 import 'systems/wave_system.dart';
-import 'systems/game_loop.dart'; // IMPORT BARU
+import 'systems/game_loop.dart';
 
 void main() {
   runApp(const TowerDefenseGame());
@@ -36,9 +36,9 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateMixin {
+class _GameScreenState extends State<GameScreen> {
   late GameState gameState;
-  late GameLoop gameLoop; // TAMBAH INI
+  late GameLoop gameLoop;
   
   // Path definition
   final List<(int, int)> pathPoints = [
@@ -61,15 +61,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     super.initState();
     
     gameState = GameState();
-    gameLoop = GameLoop(gameState); // INIT GAME LOOP
-    gameLoop.start(); // START GAME LOOP
-    
-    // Hapus AnimationController lama, ganti dengan GameLoop
+    gameLoop = GameLoop(gameState);
+    gameLoop.start();
   }
   
   @override
   void dispose() {
-    gameLoop.dispose(); // DISPOSE GAME LOOP
+    gameLoop.dispose();
     super.dispose();
   }
   
@@ -79,43 +77,50 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       appBar: AppBar(
         title: const Text('Tower Defense - Optimized'),
       ),
-      body: _buildGameUI(),
+      body: ValueListenableBuilder<int>(
+        valueListenable: gameState.updateNotifier,
+        builder: (context, value, child) {
+          return _buildGameUI();
+        },
+      ),
     );
   }
   
   Widget _buildGameUI() {
-    return StreamBuilder<int>(
-      stream: Stream.periodic(const Duration(milliseconds: 16), (_) => gameLoop.frameCount),
-      builder: (context, snapshot) {
-        return Column(
-          children: [
-            // HUD
-            _buildHUD(),
-            
-            // Game Board dengan MouseRegion
-            Expanded(
-              child: Center(
-                child: MouseRegion(
-                  onHover: _handleMouseHover,
-                  child: GestureDetector(
-                    onTapDown: _handleBoardTap,
-                    child: GameBoard(
-                      key: _boardKey,
-                      gameState: gameState,
-                      pathPoints: pathPoints,
-                      onGridHover: _handleGridHover,
-                      onGridTap: _handleGridTap,
-                    ),
-                  ),
+    return Column(
+      children: [
+        // HUD - dipisah dari game loop untuk performance
+        _buildHUD(),
+        
+        // Game Board
+        Expanded(
+          child: Center(
+            child: MouseRegion(
+              onHover: _handleMouseHover,
+              onExit: (_) {
+                if (gameState.currentPlacement != null) {
+                  setState(() {
+                    _hoverGridPosition = null;
+                  });
+                }
+              },
+              child: GestureDetector(
+                onTapDown: _handleBoardTap,
+                child: GameBoard(
+                  key: _boardKey,
+                  gameState: gameState,
+                  pathPoints: pathPoints,
+                  onGridHover: _handleGridHover,
+                  onGridTap: _handleGridTap,
                 ),
               ),
             ),
-            
-            // Tower Shop
-            _buildTowerShop(),
-          ],
-        );
-      }
+          ),
+        ),
+        
+        // Tower Shop - dipisah dari game loop
+        _buildTowerShop(),
+      ],
     );
   }
   
@@ -320,11 +325,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     }
     
     // Convert to grid coordinates
-    final unscaledX = localPos.dx; // Sudah dalam pixel game
-    final unscaledY = localPos.dy;
-    
-    final gridX = (unscaledX / GameConstants.pixelsPerMeter).floor();
-    final gridY = (unscaledY / GameConstants.pixelsPerMeter).floor();
+    final gridX = (localPos.dx / GameConstants.pixelsPerMeter).floor();
+    final gridY = (localPos.dy / GameConstants.pixelsPerMeter).floor();
     
     // Clamp to board boundaries
     final clampedX = gridX.clamp(0, GameConstants.boardWidthMeters - 1);

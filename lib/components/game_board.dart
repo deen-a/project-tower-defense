@@ -23,17 +23,41 @@ class GameBoard extends StatefulWidget {
 }
 
 class _GameBoardState extends State<GameBoard> {
+  // Cache untuk performance
+  late ui.Size _boardSize;
+  List<ui.Offset> _pathPixelPoints = [];
+  
+  @override
+  void initState() {
+    super.initState();
+    _boardSize = ui.Size(
+      GameConstants.metersToPixels(GameConstants.boardWidthMeters.toDouble()),
+      GameConstants.metersToPixels(GameConstants.boardHeightMeters.toDouble()),
+    );
+    _pathPixelPoints = _convertPathToPixels();
+  }
+  
+  List<ui.Offset> _convertPathToPixels() {
+    return widget.pathPoints.map((point) {
+      return GameConstants.gridToPixel(point.$1, point.$2);
+    }).toList();
+  }
+  
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      size: ui.Size(
-        GameConstants.metersToPixels(GameConstants.boardWidthMeters.toDouble()),
-        GameConstants.metersToPixels(GameConstants.boardHeightMeters.toDouble()),
-      ),
-      painter: _GameBoardPainter(
-        gameState: widget.gameState,
-        pathPoints: widget.pathPoints,
-      ),
+    return ValueListenableBuilder<int>(
+      valueListenable: widget.gameState.updateNotifier,
+      builder: (context, value, child) {
+        return CustomPaint(
+          size: _boardSize,
+          painter: _GameBoardPainter(
+            gameState: widget.gameState,
+            pathPoints: widget.pathPoints,
+            pathPixelPoints: _pathPixelPoints,
+            frameCount: value,
+          ),
+        );
+      },
     );
   }
 }
@@ -41,25 +65,32 @@ class _GameBoardState extends State<GameBoard> {
 class _GameBoardPainter extends CustomPainter {
   final GameState gameState;
   final List<(int, int)> pathPoints;
+  final List<ui.Offset> pathPixelPoints;
+  final int frameCount;
+  
+  // Cache untuk performance
+  final Paint _backgroundPaint = Paint()..color = const Color(0xFF1E3A1F);
+  final Paint _baseBackgroundPaint = Paint()..color = Colors.blue.withOpacity(0.3);
+  final Paint _baseHealthBgPaint = Paint()..color = Colors.red[800]!;
+  final Paint _baseHealthPaint = Paint()..color = Colors.green;
   
   _GameBoardPainter({
     required this.gameState,
     required this.pathPoints,
+    required this.pathPixelPoints,
+    required this.frameCount,
   });
   
   @override
   void paint(Canvas canvas, ui.Size size) {
     // Draw background
-    canvas.drawRect(
-      ui.Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF1E3A1F),
-    );
+    canvas.drawRect(ui.Rect.fromLTWH(0, 0, size.width, size.height), _backgroundPaint);
     
-    // Draw chunks with LOD optimization
+    // Draw chunks with LOD optimization - HANYA jika perlu
     _drawChunks(canvas, size);
     
     // Draw path
-    RenderingSystem.drawPath(canvas, pathPoints);
+    _drawPath(canvas);
     
     // Draw base/finish line
     _drawBase(canvas);
@@ -81,6 +112,9 @@ class _GameBoardPainter extends CustomPainter {
     
     // Draw placement preview
     _drawPlacementPreview(canvas);
+    
+    // Draw FPS (debug)
+    _drawFPS(canvas);
   }
   
   void _drawChunks(Canvas canvas, ui.Size size) {
@@ -92,13 +126,40 @@ class _GameBoardPainter extends CustomPainter {
       if (!bounds.overlaps(viewport)) continue;
       
       final isDetailed = gameState.shouldRenderDetailedChunk('${chunk.x},${chunk.y}');
-      RenderingSystem.drawChunkBackground(canvas, bounds, isDetailed);
+      if (isDetailed) {
+        RenderingSystem.drawChunkBackground(canvas, bounds, true);
+      } else {
+        // Simple chunk - sangat minimal
+        final simplePaint = Paint()..color = const Color(0xFF1E3A1F);
+        canvas.drawRect(bounds, simplePaint);
+      }
     }
   }
   
+  void _drawPath(Canvas canvas) {
+    final pathWidthPixels = GameConstants.pathWidthPixels;
+    
+    // Draw path segments
+    final pathPaint = Paint()
+      ..color = const Color(0xFF8B4513)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = pathWidthPixels
+      ..strokeCap = StrokeCap.round;
+    
+    for (int i = 0; i < pathPixelPoints.length - 1; i++) {
+      canvas.drawLine(pathPixelPoints[i], pathPixelPoints[i + 1], pathPaint);
+    }
+    
+    // Draw start/end markers
+    final startPoint = pathPixelPoints.first;
+    final endPoint = pathPixelPoints.last;
+    
+    canvas.drawCircle(startPoint, 8, Paint()..color = Colors.red);
+    canvas.drawCircle(endPoint, 8, Paint()..color = Colors.blue);
+  }
+  
   void _drawBase(Canvas canvas) {
-    // Draw base at the end of path
-    final endPoint = GameConstants.gridToPixel(pathPoints.last.$1, pathPoints.last.$2);
+    final endPoint = pathPixelPoints.last;
     
     // Base background
     final baseRect = ui.Rect.fromCircle(
@@ -106,10 +167,7 @@ class _GameBoardPainter extends CustomPainter {
       radius: 20,
     );
     
-    canvas.drawRect(
-      baseRect,
-      Paint()..color = Colors.blue.withOpacity(0.3),
-    );
+    canvas.drawRect(baseRect, _baseBackgroundPaint);
     
     // Base health bar
     final healthPercent = gameState.baseHealth / gameState.maxBaseHealth;
@@ -124,7 +182,7 @@ class _GameBoardPainter extends CustomPainter {
         width: healthBarWidth.toDouble(),
         height: healthBarHeight.toDouble(),
       ),
-      Paint()..color = Colors.red[800]!,
+      _baseHealthBgPaint,
     );
     
     // Current health
@@ -134,27 +192,7 @@ class _GameBoardPainter extends CustomPainter {
         width: healthBarWidth * healthPercent,
         height: healthBarHeight.toDouble(),
       ),
-      Paint()..color = Colors.green,
-    );
-    
-    // Base text
-    final textSpan = TextSpan(
-      text: 'BASE',
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 12,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-    
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    )..layout();
-    
-    textPainter.paint(
-      canvas,
-      ui.Offset(endPoint.dx - textPainter.width / 2, endPoint.dy + 15),
+      _baseHealthPaint,
     );
   }
   
@@ -173,7 +211,7 @@ class _GameBoardPainter extends CustomPainter {
     canvas.drawCircle(position, specs.rangePixels, rangePaint);
     
     // Draw tower preview
-    final previewColor = isValid ? specs.color : Colors.grey;
+    final previewColor = isValid ? specs.color : Colors.grey[500]!;
     final towerPaint = Paint()..color = previewColor;
     canvas.drawCircle(position, GameConstants.metersToPixels(1.2), towerPaint);
     
@@ -202,16 +240,32 @@ class _GameBoardPainter extends CustomPainter {
     }
   }
   
+  void _drawFPS(Canvas canvas) {
+    final textSpan = TextSpan(
+      text: 'FPS: ${gameState.fps.toStringAsFixed(1)}',
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    
+    textPainter.paint(canvas, const ui.Offset(5, 5));
+  }
+  
   @override
   bool shouldRepaint(covariant _GameBoardPainter oldDelegate) {
-    // Selalu repaint karena game berjalan terus
-    return true;
-    
-    // Atau bisa lebih spesifik:
-    // return gameState.towers != oldDelegate.gameState.towers ||
-    //        gameState.enemies != oldDelegate.gameState.enemies ||
-    //        gameState.projectiles != oldDelegate.gameState.projectiles ||
-    //        gameState.currentPlacement != oldDelegate.gameState.currentPlacement ||
-    //        gameState.baseHealth != oldDelegate.gameState.baseHealth;
+    // Hanya repaint jika ada perubahan signifikan
+    return gameState.towers.length != oldDelegate.gameState.towers.length ||
+           gameState.enemies.length != oldDelegate.gameState.enemies.length ||
+           gameState.projectiles.length != oldDelegate.gameState.projectiles.length ||
+           gameState.currentPlacement != oldDelegate.gameState.currentPlacement ||
+           gameState.baseHealth != oldDelegate.gameState.baseHealth ||
+           frameCount != oldDelegate.frameCount;
   }
 }

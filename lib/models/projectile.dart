@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'enemy.dart';
-import '../utils/offset_extension.dart'; // Import extension
+import '../utils/offset_extension.dart';
 
 enum ProjectileType {
   basic,     // Bulat kecil - untuk basic tower
@@ -34,15 +34,32 @@ class Projectile {
   
   void update(double dt) {
     if (!isActive) return;
+    if (!target.isAlive) {
+      isActive = false;
+      return;
+    }
     
+    // Move toward target
     final direction = (target.currentPosition - currentPosition).normalized;
     final movement = direction * speed * dt;
     currentPosition += movement;
     
-    // Check hit
+    // Check hit - lebih akurat
     final distanceToTarget = (target.currentPosition - currentPosition).distance;
-    if (distanceToTarget < 10) { // Hit threshold
+    final hitThreshold = type == ProjectileType.laser ? 30 : 15; // Laser punya threshold lebih besar
+    
+    if (distanceToTarget < hitThreshold) {
       isActive = false;
+    }
+    
+    // Untuk laser, langsung hit jika dalam line of sight
+    if (type == ProjectileType.laser) {
+      final distanceTraveled = (currentPosition - startPosition).distance;
+      final distanceToTargetFromStart = (target.currentPosition - startPosition).distance;
+      
+      if (distanceTraveled >= distanceToTargetFromStart) {
+        isActive = false;
+      }
     }
   }
   
@@ -54,7 +71,7 @@ class Projectile {
       case ProjectileType.rapid:
         return 3;
       case ProjectileType.laser:
-        return 2;
+        return 8; // Lebar untuk laser
       case ProjectileType.flame:
         return 6;
     }
@@ -67,7 +84,7 @@ class Projectile {
       case ProjectileType.rapid:
         return 3;
       case ProjectileType.laser:
-        return 20; // Panjang untuk laser
+        return (target.currentPosition - currentPosition).distance; // Panjang sesuai jarak ke target
       case ProjectileType.flame:
         return 6;
     }
