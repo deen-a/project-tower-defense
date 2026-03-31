@@ -14,6 +14,7 @@ class Enemy {
   ui.Offset currentPosition;
   final List<ui.Offset> pathPoints;
   bool reachedEnd = false;
+  bool isDead = false; // Flag untuk menandai sudah mati
   
   Enemy({
     required this.type,
@@ -76,7 +77,7 @@ class Enemy {
   }
   
   void update(double dt) {
-    if (reachedEnd) return;
+    if (reachedEnd || isDead) return;
     
     // Move along path
     final speed = walkSpeed * GameConstants.pixelsPerMeter * dt;
@@ -118,16 +119,38 @@ class Enemy {
     return length;
   }
   
-  bool get isAlive => health > 0;
+  bool get isAlive => health > 0 && !isDead;
   
   void takeDamage(double damage) {
+    if (isDead) return;
     health -= damage;
     if (health < 0) health = 0;
+  }
+  
+  void kill() {
+    isDead = true;
+    health = 0;
   }
   
   double get remainingHealthDamage {
     // Damage ke base = sisa health / 5
     return health / 5;
+  }
+  
+  int get coinReward {
+    // Reward berdasarkan tipe enemy
+    switch (type) {
+      case 'basic':
+        return (maxHealth / 10).ceil();
+      case 'fast':
+        return (maxHealth / 8).ceil();
+      case 'tank':
+        return (maxHealth / 12).ceil();
+      case 'flying':
+        return (maxHealth / 10).ceil();
+      default:
+        return (maxHealth / 10).ceil();
+    }
   }
 }
 

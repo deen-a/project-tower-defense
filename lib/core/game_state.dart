@@ -4,18 +4,24 @@ import '../models/tower.dart';
 import '../models/enemy.dart';
 import '../models/projectile.dart';
 import 'chunk_manager.dart';
-import './game_constants.dart';
+import '../systems/wave_system.dart';
+import 'game_constants.dart';
+import '../systems/wave_system.dart'; 
 
 class GameState {
   List<Tower> towers = [];
   List<Enemy> enemies = [];
   List<Projectile> projectiles = [];
   TowerPlacement? currentPlacement;
-  int coins = 2000000;
+  int coins = 2000;
   int waveNumber = 0;
   bool isWaveActive = false;
   double baseHealth = 100.0;
   double maxBaseHealth = 100.0;
+  
+  // Wave spawner
+  WaveSpawner? _waveSpawner;
+  bool _isSpawning = false;
   
   // Chunk optimization
   final ChunkManager chunkManager = ChunkManager();
@@ -70,28 +76,71 @@ class GameState {
     return detailedChunks.contains(chunkKey);
   }
   
+  void startWave(List<ui.Offset> pathPoints) {
+    if (isWaveActive) return;
+    
+    isWaveActive = true;
+    waveNumber++;
+    
+    // Generate enemies untuk wave
+    final newEnemies = WaveSystem.generateWave(waveNumber, pathPoints);
+    
+    // Setup spawner dengan delay
+    _waveSpawner = WaveSpawner(
+      enemies: newEnemies,
+      spawnDelay: const Duration(milliseconds: 400), // 0.4 detik antar enemy
+    );
+    
+    _isSpawning = true;
+    
+    _waveSpawner!.start(
+      (enemy) {
+        // Tambah enemy ke list
+        enemies.add(enemy);
+        updateNotifier.value++;
+      },
+      () {
+        // Spawning selesai
+        _isSpawning = false;
+        _waveSpawner = null;
+        updateNotifier.value++;
+      },
+    );
+  }
+  
   void update(double dt) {
     _frameCount++;
     
-    // Update enemies
+    // Update enemies dan cek yang mati
     final List<Enemy> enemiesToRemove = [];
+    final List<Enemy> enemiesReachedEnd = [];
     
     for (var enemy in enemies) {
       enemy.update(dt);
       
-      // Check if enemy reached end
-      if (enemy.reachedEnd) {
-        baseHealth -= enemy.remainingHealthDamage;
+      // Cek jika enemy mati
+      if (!enemy.isAlive && !enemy.isDead) {
+        enemy.kill();
         enemiesToRemove.add(enemy);
+        // BERIKAN COIN SAAT MEMBUNUH ENEMY
+        coins += enemy.coinReward;
+        continue;
+      }
+      
+      // Check if enemy reached end
+      if (enemy.reachedEnd && !enemiesReachedEnd.contains(enemy)) {
+        baseHealth -= enemy.remainingHealthDamage;
+        enemiesReachedEnd.add(enemy);
       }
     }
     
-    // Remove enemies that reached end
-    enemies.removeWhere((enemy) => enemiesToRemove.contains(enemy));
+    // Remove enemies that reached end or died
+    enemies.removeWhere((enemy) => 
+      enemiesToRemove.contains(enemy) || enemiesReachedEnd.contains(enemy)
+    );
     
     // Update projectiles dan check collision
     final List<Projectile> projectilesToRemove = [];
-    final List<Enemy> enemiesToDamage = [];
     
     for (var projectile in projectiles) {
       projectile.update(dt);
@@ -101,22 +150,18 @@ class GameState {
         projectilesToRemove.add(projectile);
         
         // Damage enemy jika projectile sampai
-        if (projectile.target.isAlive) {
+        if (projectile.target.isAlive && !projectile.target.isDead) {
           projectile.target.takeDamage(projectile.damage);
           
           // Splash damage
           if (projectile.splashRadius > 0) {
             for (var otherEnemy in enemies) {
               if (otherEnemy != projectile.target && 
+                  otherEnemy.isAlive &&
                   (otherEnemy.currentPosition - projectile.target.currentPosition).distance <= projectile.splashRadius) {
                 otherEnemy.takeDamage(projectile.damage * 0.5); // 50% splash damage
               }
             }
-          }
-          
-          // Check if enemy died
-          if (!projectile.target.isAlive) {
-            coins += (projectile.target.maxHealth / 10).ceil();
           }
         }
       }
@@ -135,13 +180,13 @@ class GameState {
     for (var tower in towers) {
       tower.update(dt);
       
-      // Tower shooting logic - optimasi: cari enemy terdekat dalam range
+      // Tower shooting logic
       if (tower.canFire() && enemies.isNotEmpty) {
         Enemy? closestEnemy;
         double closestDistance = double.infinity;
         
         for (var enemy in enemies) {
-          if (!enemy.isAlive) continue;
+          if (!enemy.isAlive || enemy.isDead) continue;
           
           final distance = (tower.pixelPosition - enemy.currentPosition).distance;
           if (distance <= tower.specs.rangePixels && distance < closestDistance) {
@@ -173,12 +218,18 @@ class GameState {
     if (baseHealth <= 0) {
       baseHealth = 0;
       isWaveActive = false;
+      if (_waveSpawner != null) {
+        _waveSpawner!.stop();
+        _waveSpawner = null;
+      }
+      _isSpawning = false;
     }
     
-    // Check if wave is complete
-    if (isWaveActive && enemies.isEmpty) {
+    // Check if wave is complete (no enemies and no spawning)
+    if (isWaveActive && enemies.isEmpty && !_isSpawning) {
       isWaveActive = false;
-      coins += 100 * waveNumber; // Bonus coin
+      // Bonus coin setelah wave selesai
+      coins += 100 * waveNumber;
     }
     
     // Update FPS counter
@@ -229,4 +280,9 @@ class GameState {
   }
   
   double get fps => _currentFps;
+  
+  void dispose() {
+    _waveSpawner?.dispose();
+    updateNotifier.dispose();
+  }
 }

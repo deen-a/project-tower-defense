@@ -150,12 +150,19 @@ class RenderingSystem {
   }
   
   static void drawEnemy(Canvas canvas, Enemy enemy) {
+    if (enemy.isDead) return; // Jangan render enemy yang sudah mati
+    
     final position = enemy.currentPosition;
     final healthPercent = enemy.health / enemy.maxHealth;
     
-    // Enemy body
+    // Enemy body dengan warna sesuai tipe
     final bodyColor = _getEnemyColor(enemy.type);
     final bodyPaint = Paint()..color = bodyColor;
+    
+    // Tambah effect jika health rendah
+    if (healthPercent < 0.3) {
+      bodyPaint.color = Colors.red.withOpacity(0.8);
+    }
     
     final size = enemy.isFlying 
         ? GameConstants.metersToPixels(1.5)

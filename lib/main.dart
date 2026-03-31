@@ -387,18 +387,15 @@ class _GameScreenState extends State<GameScreen> {
   void _startWave() {
     if (gameState.isWaveActive) return;
     
-    setState(() {
-      gameState.isWaveActive = true;
-      gameState.waveNumber++;
-      
-      // Convert path points from grid to pixel
-      final pixelPathPoints = pathPoints.map((point) {
-        return GameConstants.gridToPixel(point.$1, point.$2);
-      }).toList();
-      
-      // Generate enemies for this wave
-      final newEnemies = WaveSystem.generateWave(gameState.waveNumber, pixelPathPoints);
-      gameState.enemies.addAll(newEnemies);
-    });
+    // Convert path points from grid to pixel
+    final pixelPathPoints = pathPoints.map((point) {
+      return GameConstants.gridToPixel(point.$1, point.$2);
+    }).toList();
+    
+    // Start wave dengan spawn system
+    gameState.startWave(pixelPathPoints);
+    
+    // Trigger UI update
+    setState(() {});
   }
 }
